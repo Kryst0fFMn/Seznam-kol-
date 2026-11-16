@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Seznam úkolů s časovačem</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 32px 16px;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      color: #1f2937;
+      background: linear-gradient(135deg, #eef4ff, #f8fafc);
+    }
+
+    .app {
+      width: 100%;
+      max-width: 650px;
+      margin: 0 auto;
+      padding: 24px;
+      background: white;
+      border-radius: 18px;
+      box-shadow: 0 12px 30px rgba(16, 24, 40, 0.1);
+    }
+
+    h1 { margin: 0 0 20px; text-align: center; }
+
+    .input-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    input {
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font: inherit;
+    }
+
+    .deadline-row { margin-bottom: 18px; }
+    .deadline-row label { display: block; margin-bottom: 6px; color: #4b5563; }
+
+    button {
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 10px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .add-btn { color: white; background: #2563eb; font-weight: bold; }
+    .add-btn:hover { background: #1d4ed8; }
+
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 14px;
+      color: #6b7280;
+    }
+
+    ul {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+    }
+
+    .task-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+    .task-text { overflow-wrap: anywhere; }
+    .task-text.done { color: #6b7280; text-decoration: line-through; }
+    .task-details { margin-top: 5px; color: #6b7280; font-size: 0.9rem; }
+    .timer { font-weight: bold; }
+    .timer.overdue { color: #dc2626; }
+    .checkbox { margin-top: 3px; accent-color: #16a34a; }
+
+    .delete-btn { padding: 8px 10px; color: #b91c1c; background: #fee2e2; }
+    .delete-btn:hover { background: #fecaca; }
+
+    .empty {
+      justify-content: center;
+      padding: 18px;
+      color: #6b7280;
+      border-style: dashed;
+    }
+
+    @media (max-width: 480px) {
+      .app { padding: 18px; }
+      .input-row { grid-template-columns: 1fr; }
+      li { align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <h1>Seznam úkolů</h1>
+
+    <div class="input-row">
+      <input id="taskInput" type="text" placeholder="Napiš úkol..." maxlength="200">
+      <button class="add-btn" id="addTaskBtn">Přidat</button>
+    </div>
+
+    <div class="deadline-row">
+      <label for="deadlineInput">Dokončit do (nepovinné):</label>
+      <input id="deadlineInput" type="datetime-local">
+    </div>
+
+    <div class="stats">
+      <span id="taskCount">0 úkolů</span>
+      <span id="remainingCount">0 zbývá</span>
+    </div>
+
+    <ul id="taskList"></ul>
+  </main>
+
+  <script>
+    const taskInput = document.getElementById("taskInput");
+    const deadlineInput = document.getElementById("deadlineInput");
+    const taskList = document.getElementById("taskList");
+    const taskCount = document.getElementById("taskCount");
+    const remainingCount = document.getElementById("remainingCount");
+
+    function loadTasks() {
+      try {
+        const saved = JSON.parse(localStorage.getItem("tasks") || "[]");
+        return Array.isArray(saved) ? saved : [];
+      } catch {
+        return [];
+      }
+    }
+
+    let tasks = loadTasks();
+
+    function saveTasks() {
+      localStorage.setItem("tasks", JSON.stringify(tasks));
+    }
+
+    function updateStats() {
+      const remaining = tasks.filter(task => !task.done).length;
+      taskCount.textContent = `${tasks.length} úkolů`;
+      remainingCount.textContent = `${remaining} zbývá`;
+    }
+
+    function formatRemaining(deadline) {
+      const secondsLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / 1000);
+
+      if (secondsLeft <= 0) return "Čas vypršel";
+
+      const days = Math.floor(secondsLeft / 86400);
+      const hours = Math.floor((secondsLeft % 86400) / 3600);
+      const minutes = Math.floor((secondsLeft % 3600) / 60);
+      const seconds = secondsLeft % 60;
+
+      if (days > 0) return `Zbývá ${days} d ${hours} h`;
+      if (hours > 0) return `Zbývá ${hours} h ${minutes} min`;
+      if (minutes > 0) return `Zbývá ${minutes} min ${seconds} s`;
+      return `Zbývá ${seconds} s`;
+    }
+
+    function renderTasks() {
+      taskList.replaceChildren();
+
+      if (tasks.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "empty";
+        empty.textContent = "Zatím tu nejsou žádné úkoly.";
+        taskList.appendChild(empty);
+        updateStats();
+        return;
+      }
+
+      tasks.forEach((task, index) => {
+        const li = document.createElement("li");
+        const main = document.createElement("div");
+        main.className = "task-main";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "checkbox";
+        checkbox.checked = Boolean(task.done);
+        checkbox.setAttribute("aria-label", "Označit úkol jako hotový");
+        checkbox.addEventListener("change", () => {
+          tasks[index].done = checkbox.checked;
+          saveTasks();
+          renderTasks();
+        });
+
+        const content = document.createElement("div");
+
+        const text = document.createElement("div");
+        text.className = "task-text";
+        text.textContent = task.text || "";
+        if (task.done) text.classList.add("done");
+        content.appendChild(text);
+
+        const details = document.createElement("div");
+        details.className = "task-details";
+
+        if (task.done) {
+          details.textContent = "Hotovo";
+        } else if (task.deadline) {
+          const deadlineDate = new Date(task.deadline);
+          const timeText = document.createElement("span");
+          timeText.textContent = `Termín: ${deadlineDate.toLocaleString("cs-CZ")} — `;
+          details.appendChild(timeText);
+
+          const timer = document.createElement("span");
+          timer.className = "timer";
+          timer.textContent = formatRemaining(task.deadline);
+          if (new Date(task.deadline).getTime() <= Date.now()) {
+            timer.classList.add("overdue");
+          }
+          details.appendChild(timer);
+        } else {
+          details.textContent = "Bez termínu";
+        }
+
+        content.appendChild(details);
+        main.append(checkbox, content);
+
+        const deleteBtn = document.createElement("button");
+        deleteBtn.className = "delete-btn";
+        deleteBtn.textContent = "Smazat";
+        deleteBtn.addEventListener("click", () => {
+          tasks.splice(index, 1);
+          saveTasks();
+          renderTasks();
+        });
+
+        li.append(main, deleteBtn);
+        taskList.appendChild(li);
+      });
+
+      updateStats();
+    }
+
+    function addTask() {
+      const text = taskInput.value.trim();
+      if (!text) {
+        taskInput.focus();
+        return;
+      }
+
+      let deadline = null;
+      if (deadlineInput.value) {
+        const date = new Date(deadlineInput.value);
+        if (!Number.isNaN(date.getTime())) deadline = date.toISOString();
+      }
+
+      tasks.unshift({ text, done: false, deadline });
+      saveTasks();
+      taskInput.value = "";
+      deadlineInput.value = "";
+      renderTasks();
+      taskInput.focus();
+    }
+
+    document.getElementById("addTaskBtn").addEventListener("click", addTask);
+    taskInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") addTask();
+    });
+
+    renderTasks();
+    setInterval(renderTasks, 1000);
+  </script>
+</body>
+</html>
